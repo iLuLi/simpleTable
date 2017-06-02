@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+  <link href="https://cdn.bootcss.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.bootcss.com/jquery/2.2.3/jquery.js"></script>
+  <script src="mytable.js"></script>
+  <script src="simpleTable.js"></script>
+</head>
+<body>
+  <table id="example" class="table table-condensed table-striped">
+    
+  </table>
+  <script>
+    var table;
+    $(function() {
+    // table = $("#example").simpleTable({
+    //     serverSide: true,
+    //     ajax: {
+    //       loadAjax: {
+    //         url: './data.json'
+    //       },
+    //       editAjax: {
+    //         url: './edit.json'
+    //       }
+    //     },
+    //     colNames: ['Java1', 'Java2', '操作'],
+    //     colModel: [{
+    //       data: 'name',
+    //       render: function(data) {
+    //         return data
+    //       },
+    //       inlineEdit: true,
+    //       filed: true,
+    //       filedType: 'text',
+    //       filedLabel: '姓名',
+    //       filedName: 'name'
+    //     },{
+    //       data: 'sex',
+    //       render: function(data) {
+    //         return data;
+    //       },
+    //       filed: true,
+    //       filedType: 'select',
+    //       filedLabel: '性别',
+    //       options: [
+    //         {text: '男', value: 0},
+    //         {text: '女', value: 1}
+    //       ],
+    //       filedName: 'sex'
+    //     },{
+    //       render: function() {
+    //         return "<a class='edit'>编辑</a> / <a class='delete'>删除</a>";
+    //       }
+    //     }]
+    //   });
+
+    //   $("#example").on('click', 'a.edit', function(e) {
+    //     e.preventDefault();
+    //     table.edit($(e.target).closest("tr"));
+    //   })
+    //   $("#example").on('click', 'a.delete', function(e) {
+    //     e.preventDefault();
+    //     table.delete($(e.target).closest("tr"));
+    //   })
+      new SimpleTable($("#example"), {
+        checkbox: true,
+        colmuns: [{
+          title: '姓名',
+          width: '100px',
+          data: 'name'
+        },{
+          title: '班级',
+          data: 'sex.s.[0]',
+          render: function(data) {
+            return data == 0 ? "男" : "女";
+          }
+        }],
+        editor: {
+          checkbox: true,
+          idSrc: "id",
+          fields: []
+        },
+        ajax: function(params, success, error) {
+          $.ajax({
+            url: "./data.json",
+            type: "get",
+            data: params,
+            success: function(data) {
+              if(data.code == 0) {
+                success(data);
+              }
+            }
+          })
+        }
+      })
+    })
+    
+  </script>
+</body>
+</html>
