@@ -66,8 +66,7 @@
     //     e.preventDefault();
     //     table.delete($(e.target).closest("tr"));
     //   })
-      new SimpleTable($("#example"), {
-        checkbox: true,
+      var table = new SimpleTable($("#example"), {
         colmuns: [{
           title: '姓名',
           width: '100px',
@@ -78,11 +77,24 @@
           render: function(data) {
             return data == 0 ? "男" : "女";
           }
+        },{
+          title: '操作',
+          render: function() {
+            return "<a class='edit'>编辑</a> / <a class='delete'>删除</a>"
+          }
         }],
         editor: {
           checkbox: true,
           idSrc: "id",
-          fields: []
+          ajaxUrl: {
+            edit: "./edit.json"
+          },
+          fields: [{
+            label: '姓名',
+            name: 'name',
+            type: 'text',
+            inlineEdit: true
+          }]
         },
         ajax: function(params, success, error) {
           $.ajax({
@@ -96,6 +108,9 @@
             }
           })
         }
+      });
+      $("#example").on("click", ".edit", function() {
+        table.editor.open("edit", $(this).closest("tr"));
       })
     })
     

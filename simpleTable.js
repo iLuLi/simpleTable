@@ -124,7 +124,7 @@
   }
   //单例
   function createMask() {
-    var mask = $('<div class="mask modal-backdrop fade"></div>');
+    var mask = $('<div style="display:none" class="mask modal-backdrop fade"></div>');
     if($(".mask").length == 0) {
       $("body").append(mask);
       return mask;
@@ -140,9 +140,11 @@
     this.$table = element;
     this.options = new Options(opts);
     this.pagination = new Pagination(element, this.options);
+    this.editor = new Editor(element, this.options);
     this.init();
 
     this.$table.data("simpleTable", this);
+    return this;
   }
   Utils.Extend(SimpleTable, Utils.Observable);
   SimpleTable.prototype.init = function() {
@@ -153,6 +155,7 @@
   }
   SimpleTable.prototype.bindEvent = function() {
     this.on("s.load", Utils.bind(this, this.loadData));
+    
   }
   SimpleTable.prototype.initThead = function() {
     //检查是否存在thead
@@ -230,6 +233,7 @@
       if(col.render && typeof col.render == "function") {
         text = col.render(d);
       }
+      
       tds.push("<td>" + text + "</td>");
     });
     if(tr) {
@@ -267,11 +271,11 @@
     modal.push('<h4 class="modal-title"></h4>');
     modal.push('</div>');
     modal.push('<div class="modal-body">');
-    modal.push('');
+    modal.push('<div class="form-horizontal"></div>');
     modal.push('</div>');
     modal.push('<div class="modal-footer">');
     modal.push('<span class="error" style="color: red;margin-right: 20px;"></span>')
-    modal.push('<button type="button" class="ok btn btn-primary"></button>');
+    modal.push('<button type="button" class="ok btn btn-primary">确定</button>');
     modal.push('</div>');
     modal.push('</div>');
     modal.push('</div>');
@@ -284,7 +288,12 @@
     this.options = options;
     this.isOpen = false;
     this.action = "";
+    this.selected = [];
+    this.editRow = null;
+    this.editData = null;
+    this.inlineEdit = false;
     this.isTemplate = !!this.options.get("editor") && !!this.options.get("editor")["template"];
+    this.init();
   }
   Editor.prototype.init = function() {
     var self = this;
@@ -294,8 +303,11 @@
       this.$modal = $(createModal());
       this.$modal.appendTo($("body"));
     }
+    this.bindEvent();
   }
-  Editor.prototype.createField = function(field) {
+
+  Editor.prototype.createField = function(field, inlineEdit) {
+    var temp;
     switch(field.type) {
       case 'text':
       case 'password':
@@ -310,10 +322,17 @@
         temp += "</select>";
         break;
     }
-    return "<div class='form-group'><label class='col-xs-3  control-label'>" + field.label + "</label><div class='col-xs-6'>" + temp + "</div></div>");
+    if(inlineEdit) {
+      return temp;
+    } else {
+      return "<div class='form-group'><label class='col-xs-3  control-label'>" + field.label + "</label><div class='col-xs-6'>" + temp + "</div></div>";
+    }
+    
   }
-  Editor.prototype.open = function(action, rowData) {
+  Editor.prototype.open = function(action, tr) {
     var self = this;
+    var rowData = this.editData = $(tr).data("data");
+    self.editRow = tr;
     this.isOpen = true;
     this.action = action;
     if(!this.isTemplate && (action == "edit" || action == "add")) {
@@ -322,13 +341,13 @@
         $.each(this.options.get("editor")["fields"], function(i, field) {
           fields.push(self.createField(field));
         });
-        this.$modal.find("modal-body").html(fields.join(""));
+        this.$modal.find(".modal-body .form-horizontal").html(fields.join(""));
       }
     }
     if(!this.isTemplate && action == "delete") {
       this.$modal.find(".modal-body").html("<div class='text-left'>确认删除该条记录？</div>");
     }
-    if(this.isTemplate && action == "edit") {
+    if(!this.isTemplate && action == "edit") {
       $.each(this.options.getEditor("fields"), function(i, field) {
         var pattern = field.data ? field.data : field.name;
         var d = rowData;
@@ -352,7 +371,8 @@
       this.options.getEditor("onBeforeOpen")(action, rowData);
     }
     if(!this.isTemplate) {
-      $(".mask").show();
+      $(".mask").removeClass("out");
+      $(".mask").addClass("in").show();
       self.$modal.show().find(".error").html("");
       self.$modal.removeClass("out").addClass("in");
     }
@@ -363,18 +383,187 @@
       self.$modal.removeClass("in").addClass("out");
       setTimeout(function() {
         self.$modal.hide();
-        $(".mask").hide();
+        $(".mask").removeClass("in").addClass("out").hide();
       }, 100);
     });
     this.$modal.on("click", ".close", function() {
       self.$modal.trigger("s.close");
     });
     this.$modal.on("click", "button.ok", function() {
-     
+      self.update(self.getParams());
+    });
+    if(this.options.isCheckbox) {
+      this.$table.on("click", ".s-checkbox", function() {
+        if(this.checked) {
+          var tr = $(this).closest("tr");
+          self.selected.push(tr.get(0));
+          self.editData = tr.data("data");
+          self.editRow = tr;
+        } else {
+          var i = self.selected.indexOf(tr);
+          self.selected.slice(i, 1);
+          var t = self.selected.pop();
+          if(t) {
+            self.editData = $(t).data('data');
+            self.editRow = t;
+          } else {
+            self.editData = null;
+            self.editRow = null;
+          }
+        }
+      })
+    } 
+    //行内编辑
+    this.$table.on("dblclick", "td.s-inline-edit", function() {
+      var name = $(this).attr("data-name");
+      var field = self.options.getField(name);
+      if(field && self.$table.find("td.editing").length == 0) {
+        $(this).addClass("editing").html(this.createField(field));
+        var rowData = $(this).closest("tr").data("data");
+        $(this).children().val(this.getValue(rowData, field));
+        self.action = "edit";
+        self.inlineEdit = true;
+        $(this).children().on("blur", function() {
+          var v = $(this).val();
+          var n = $(this).attr("name");
+          var obj = {};
+          obj[n] = v;
+          var editData = self.getEditData(rowData);
+          $.extend(editData, obj);
+          self.update(editData);
+        });
+      }
     });
   }
+  Editor.prototype.getValue = function(rowData, field) {
+    var pattern = field.data ? field.data : field.name;
+    var d = rowData;
+    if(typeof pattern == "string") {
+      var keys = pattern.split(".");
+      $.each(keys, function(a, key) {
+        if(/^\[\d+\]$/.test(key)) {
+          d = d[parseInt(key.replace(/[\[\]]/g, ""))];
+        } else {
+          d = d[key];
+        }
+      });
+    } else if(typeof pattern == "function") {
+      d = pattern(d);
+    }
+    return d;
+  }
+  Editor.prototype.getEditData = function(rowData) {
+    var data = {};
+    $.each(this.options.getEditor("fields"), function(i, field) {
+      var pattern = field.data ? field.data : field.name;
+      var d = rowData;
+      if(typeof pattern == "string") {
+        var keys = pattern.split(".");
+        $.each(keys, function(a, key) {
+          if(/^\[\d+\]$/.test(key)) {
+            d = d[parseInt(key.replace(/[\[\]]/g, ""))];
+          } else {
+            d = d[key];
+          }
+        });
+      } else if(typeof pattern == "function") {
+        d = pattern(d);
+      }
+      data[field.name] = d;
+    });
+    data[this.options.getEditor("idSrc")] = rowData[this.options.getEditor("idSrc")];
+    return data;
+  }
+  Editor.prototype.getSelectedId = function() {
+    if(this.editData) {
+      return this.editData[this.options.getEditor("idSrc")];
+    }
+  }
+  Editor.prototype.getSelectedIds = function() {
+    var ids = [];
+    $.each(this.selected, function(i, tr) {
+      ids.push($(tr).data("data")[this.options.getEditor("idSrc")])
+    })
+  }
   Editor.prototype.getParams = function() {
-    
+    var self = this;
+    var validate = this.options.getEditor("validate");
+    if(typeof validate == "function") {
+      var r = validate(this.action);
+      if(r) {
+        var editData = {};
+        if(this.options.isTemplate) {
+          if(typeof this.options.getEditor("getParams") == "function") {
+            editData = this.options.getEditor("getParams")(this.action);
+          }
+        } else {
+          $.each(this.options.getEditor("fields"), function(i, field) {
+            editData[field.name] = self.$modal.find("[name='" + field.name + "']").val();
+          });
+        }
+        if(this.action == "edit") {
+          editData[this.options.getEditor("idSrc")] = self.getSelectedId();
+        }
+        return editData;
+      } else {
+        return false;
+      }
+    }
+  }
+  Editor.prototype.update = function(params) {
+    if(params == false) return;
+    params = params ? params : {};
+    var url;
+    if(this.options.getEditor("ajaxUrl")) {
+      url = this.options.getEditor("ajaxUrl")[this.action];
+      url.replace("_id_", this.getSelectedId());
+    }
+    if(this.action == "delete") {
+      params["ids"] = this.getSelectedIds();
+    } 
+    if(typeof this.options.getEditor("ajax") == "function") {
+      var ajax = this.options.getEditor("ajax");
+      ajax(url, this.action, params, Utils.bind(this, this.success), Utils.bind(this, this.error));
+    } else {
+      this.ajaxUpdate(url, params);
+    }
+  }
+  Editor.prototype.ajaxUpdate = function(url, params) {
+    var ajax = {
+      "type": "get",
+      dataType: "json"
+    }
+    ajax["data"] = params;
+    ajax["url"] = url;
+    ajax["success"] = Utils.bind(this, this.success);
+    ajax["error"] = Utils.bind(this, this.error);
+    $.ajax(ajax);
+  }
+  Editor.prototype.success = function(data) {
+    var self = this;
+    if(data.code == 0) {
+      var simpleTableInstance = this.$table.data("simpleTable");
+      self.$modal.trigger("s.close");
+      if(this.action == "add" || this.action == "delete") {
+        simpleTableInstance.loadData();
+      } else {
+        simpleTableInstance.renderRow(data.content, this.editRow);
+      }
+    } else {
+      self.error(data.error);
+    }
+  }
+  Editor.prototype.error = function(error) {
+    if(this.inlineEdit) {
+      $error = this.$table.find("td.editing .error");
+      if($error.length == 0) {
+        this.$table.find("td.editing").append("<span class='error'>" + error + "</span>");
+      } else {
+        $error.html(error);
+      }
+    } else {
+      this.$modal.find(".error").html(error);
+    }
   }
 
   function Pagination(element, options) {
@@ -506,9 +695,17 @@
   }
   Options.prototype.getEditor = function(name) {
     if(this.options["editor"]) {
-      this.options["editor"][name];
+      return this.options["editor"][name];
     } else {
       return undefined;
+    }
+  }
+  Options.prototype.getField = function(name) {
+    var fields = this.getEditor("fields");
+    for(var i = 0;i < fields.length;i++) {
+      if(fields[i].name == name) {
+        return fields[i];
+      }
     }
   }
   Options.prototype.set = function(name, value) {
@@ -541,10 +738,13 @@
       checkbox: false,
       ajaxUrl: {
         edit: "edit",
-        create: "create",
+        add: "create",
         delete: "delete"
       },
-      ajax:""
+      ajax:"",
+      validate: function() {
+        return true;
+      }
     },
     ajax: "",
     formateParams: function(action, params) {
